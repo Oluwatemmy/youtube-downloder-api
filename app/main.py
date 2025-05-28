@@ -2,7 +2,7 @@ from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, HttpUrl
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
-import os, yt_dlp, time
+import os, yt_dlp
 
 app = FastAPI()
 
