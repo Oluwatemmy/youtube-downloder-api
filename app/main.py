@@ -1,8 +1,8 @@
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, HttpUrl
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, FileResponse
 from fastapi.middleware.cors import CORSMiddleware
-import os, yt_dlp
+import os, yt_dlp, logging
 
 app = FastAPI()
 
@@ -15,6 +15,14 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(levelname)s - %(message)s",
+    handlers=[
+        logging.FileHandler("server.log"),
+        logging.StreamHandler()
+    ]
+)
 
 # Target resolutions
 TARGET_RESOLUTIONS = ["360p", "480p", "720p", "1080p", "1440p", "2160p"]
@@ -102,36 +110,53 @@ async def download_video(request: DownloadRequest):
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             ydl.download([str(url)])
-        return JSONResponse({
-            "status": "success",
-            "title": title,
-            "resolution": resolution,
-            "path": os.path.join(download_path, f"{title}.mp4"),
-        })
+        file_path = os.path.join(download_path, f"{title}.mp4")
+        return FileResponse(file_path, media_type='video/mp4', filename=f"{title}.mp4")
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Download failed: {e}")
 
 @app.get("/info")
 async def get_formats(url: HttpUrl):
-    info = get_video_info(str(url))
-    formats = info.get('formats', [])
-    filtered_formats = []
+    # Adding logging for debugging
+    logging.basicConfig(level=logging.INFO)
+    logging.info(f"Fetching video info for URL: {url}")
 
-    for f in formats:
-        resolution = f.get('format_note') or f.get('height')
-        if isinstance(resolution, int):
-            resolution = f"{resolution}p"
-        if f.get('vcodec') != 'none' and resolution in TARGET_RESOLUTIONS:
-            filtered_formats.append({
-                'format_id': f['format_id'],
-                'resolution': resolution,
-                'filesize': format_size(f.get('filesize') or f.get('filesize_approx')),
-                'ext': f.get('ext')
-            })
+    try:
+        info = get_video_info(str(url))
+        formats = info.get('formats', [])
+        if not formats:
+            logging.warning("No formats found in the info response.")
+            raise HTTPException(status_code=404, detail="No valid video formats found.")
+        filtered_formats = []
 
-    return {
-        "title": info.get("title"),
-        "available_formats": filtered_formats
-    }
+        if not filtered_formats:
+            logging.warning("Filtered formats list is empty after applying TARGET_RESOLUTIONS.")
+            raise HTTPException(status_code=404, detail="No valid video formats found.")
+
+        logging.info(f"Raw formats from yt_dlp ({len(formats)} entries):")
+        for f in formats:
+            logging.info(f"  - {f.get('format_id')}: {f.get('format_note')} ({f.get('height')}p) | {f.get('vcodec')})")
+            resolution = f.get('format_note') or f.get('height')
+            if isinstance(resolution, int):
+                resolution = f"{resolution}p"
+            if f.get('vcodec') != 'none' :
+                filtered_formats.append({
+                    'format_id': f['format_id'],
+                    'resolution': resolution,
+                    'filesize': format_size(f.get('filesize') or f.get('filesize_approx')),
+                    'ext': f.get('ext')
+                })
+
+        logging.info(f"Video title: {info.get('title')}")
+        logging.info(f"Available formats: {filtered_formats}")
+
+        return {
+            "title": info.get("title"),
+            "available_formats": filtered_formats
+        }
+    
+    except Exception as e:
+        logging.error(f"Error fetching video info: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to fetch video info: {e}")
 
 
