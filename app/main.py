@@ -129,23 +129,23 @@ async def get_formats(url: HttpUrl):
             raise HTTPException(status_code=404, detail="No valid video formats found.")
         filtered_formats = []
 
-        if not filtered_formats:
-            logging.warning("Filtered formats list is empty after applying TARGET_RESOLUTIONS.")
-            raise HTTPException(status_code=404, detail="No valid video formats found.")
-
         logging.info(f"Raw formats from yt_dlp ({len(formats)} entries):")
         for f in formats:
             logging.info(f"  - {f.get('format_id')}: {f.get('format_note')} ({f.get('height')}p) | {f.get('vcodec')})")
             resolution = f.get('format_note') or f.get('height')
             if isinstance(resolution, int):
                 resolution = f"{resolution}p"
-            if f.get('vcodec') != 'none' :
+            if f.get('vcodec') != 'none' and resolution in TARGET_RESOLUTIONS:
                 filtered_formats.append({
                     'format_id': f['format_id'],
                     'resolution': resolution,
                     'filesize': format_size(f.get('filesize') or f.get('filesize_approx')),
                     'ext': f.get('ext')
                 })
+
+        if not filtered_formats:
+            logging.warning("No matching formats found after filtering.")
+            raise HTTPException(status_code=404, detail="❌ No suitable formats found for the specified resolutions.")
 
         logging.info(f"Video title: {info.get('title')}")
         logging.info(f"Available formats: {filtered_formats}")
