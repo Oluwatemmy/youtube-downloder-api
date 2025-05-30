@@ -96,6 +96,16 @@ async def download_video(request: DownloadRequest):
     )
     if file_exists:
         return JSONResponse({"status": "exists", "message": "Video already downloaded."})
+    
+    # cookie file path
+    cookie_file = '/etc/secrets/youtube.com_cookies.txt'   # For production 
+    # cookie_file = './app/youtube.com_cookies.txt'  # For development, not neccessary because of the below if statement
+    
+    # Check if the cookie file exists
+    # Fallback to development cookies if not found(for testing purposes)
+    if not os.path.exists(cookie_file):
+        # use development cookies
+        cookie_file = './app/youtube.com_cookies.txt'
 
     ydl_opts = {
         'logger': MyLogger(),
@@ -105,13 +115,19 @@ async def download_video(request: DownloadRequest):
         'outtmpl': os.path.join(download_path, '%(title)s.%(ext)s'),
         'merge_output_format': 'mp4',
         'ignoreerrors': True,
+        'cookiefile': cookie_file,
     }
 
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             ydl.download([str(url)])
         file_path = os.path.join(download_path, f"{title}.mp4")
-        return FileResponse(file_path, media_type='video/mp4', filename=f"{title}.mp4")
+        return FileResponse(
+            file_path, 
+            media_type='video/mp4', 
+            filename=f"{title}.mp4",
+            headers={"Content-Disposition": f"attachment; filename={title}.mp4"}
+        )
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Download failed: {e}")
 
